@@ -10,18 +10,24 @@ dependencies:
   flutter:
     sdk: flutter
   
-  # DÜZELTME: Bu paketler en sola yaslı değil, 'flutter:' kelimesiyle aynı hizada olmalı.
-  # 'sdk: flutter' satırının altında olmamalı.
+  # HTTP istekleri için
   http: ^1.2.0
+  # Tarih formatlama
   intl: ^0.19.0
+  # Veri saklama (Oturum vb.)
   shared_preferences: ^2.2.2
   
-  # İkonlar için genelde gereklidir
+  # İkonlar
   cupertino_icons: ^1.0.6
+  # İzin yönetimi
   permission_handler: ^12.0.1
+  # Tanıtım ekranı
   introduction_screen: ^4.0.0
+  # Grafikler
   fl_chart: ^1.1.1
+  # Konfetiler
   confetti: ^0.8.0
+
 
 dev_dependencies:
   flutter_test:
