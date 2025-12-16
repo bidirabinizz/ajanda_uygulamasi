@@ -1,76 +1,127 @@
 import 'package:flutter/material.dart';
 
-// YENİ: Kategori Modeli
 class Kategori {
   final int id;
   final String baslik;
-  final int? ustKategoriId;
-  final Color renk; // Renk kodunu Color objesine çevireceğiz
+  final String renkKodu;
+  final String userId;
 
-  Kategori({required this.id, required this.baslik, this.ustKategoriId, required this.renk});
+  Kategori({
+    required this.id, 
+    required this.baslik, 
+    required this.renkKodu, 
+    required this.userId
+  });
 
   factory Kategori.fromJson(Map<String, dynamic> json) {
-    // Renk kodu null ise varsayılan mavi yapalım
-    String colorString = json['renk_kodu'] ?? '0xFF2196F3';
     return Kategori(
-      id: json['id'],
-      baslik: json['baslik'],
-      ustKategoriId: json['ust_kategori_id'],
-      renk: Color(int.parse(colorString)),
+      id: json['id'] ?? 0,
+      baslik: json['baslik'] ?? "",
+      renkKodu: json['renk_kodu'] ?? "0xFF000000",
+      userId: json['user_id']?.toString() ?? "",
     );
+  }
+
+  // Eksik olan renk getter'ı eklendi
+  Color get renk {
+    try {
+      if (renkKodu.startsWith("0x")) {
+        return Color(int.parse(renkKodu));
+      }
+      return Colors.blue; 
+    } catch (e) {
+      return Colors.blue;
+    }
   }
 }
 
-// GÜNCELLENDİ: Etkinlik Modeli
 class Etkinlik {
   final int id;
-  final int kullaniciId;
   final String baslik;
   final String? aciklama;
   final DateTime baslangicTarihi;
+  final DateTime bitisTarihi;
+  final String kategori;
+  final int? kategoriId;
   final String oncelik;
   bool tamamlandiMi;
-  final int? kategoriId; // YENİ: Kategori ID'si eklendi
+  final String userId;
 
   Etkinlik({
     required this.id,
-    required this.kullaniciId,
     required this.baslik,
     this.aciklama,
     required this.baslangicTarihi,
-    this.oncelik = 'Orta',
+    required this.bitisTarihi,
+    required this.kategori,
+    this.kategoriId,
+    required this.oncelik,
     this.tamamlandiMi = false,
-    this.kategoriId, // YENİ
+    required this.userId,
   });
 
   factory Etkinlik.fromJson(Map<String, dynamic> json) {
     return Etkinlik(
-      id: json['id'],
-      kullaniciId: json['kullanici_id'],
-      baslik: json['baslik'],
+      id: json['id'] ?? 0,
+      baslik: json['baslik'] ?? "", // Boş gelirse hata verme, boş string yap
       aciklama: json['aciklama'],
-      baslangicTarihi: DateTime.parse(json['baslangic_tarihi']),
-      oncelik: json['oncelik_duzeyi'] ?? 'Orta',
-      tamamlandiMi: json['tamamlandi_mi'] == 1,
-      kategoriId: json['kategori_id'], // YENİ
+      // --- SAAT FARKI ÇÖZÜMÜ BURADA ---
+      // .toLocal() ekleyerek sunucudan gelen saati Türkiye saatine çeviriyoruz
+      baslangicTarihi: DateTime.tryParse(json['baslangic_tarihi'] ?? "")?.toLocal() ?? DateTime.now(),
+      bitisTarihi: DateTime.tryParse(json['bitis_tarihi'] ?? "")?.toLocal() ?? DateTime.now(),
+      kategori: json['kategori_adi'] ?? 'Genel',
+      kategoriId: json['kategori_id'],
+      oncelik: json['oncelik_duzeyi'] ?? json['oncelik'] ?? "Orta", // Backend alan adı kontrolü
+      tamamlandiMi: json['tamamlandi_mi'] == 1 || json['tamamlandi_mi'] == true,
+      userId: json['user_id']?.toString() ?? "",
     );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'baslik': baslik,
+      'aciklama': aciklama,
+      'baslangic_tarihi': baslangicTarihi.toIso8601String(),
+      'bitis_tarihi': bitisTarihi.toIso8601String(),
+      'kategori_id': kategoriId,
+      'oncelik': oncelik,
+      'tamamlandi_mi': tamamlandiMi,
+      'user_id': userId,
+    };
   }
 }
 
-class Kullanici {
-  final int id;
-  final String adSoyad;
-  final String email;
-  final String? unvan;
+class GunlukNot {
+  final int? id;
+  final int userId;
+  final DateTime tarih;
+  final String notIcerik;
+  final int duyguDurumu; 
 
-  Kullanici({required this.id, required this.adSoyad, required this.email, this.unvan});
+  GunlukNot({
+    this.id,
+    required this.userId,
+    required this.tarih,
+    this.notIcerik = "",
+    this.duyguDurumu = 0, 
+  });
 
-  factory Kullanici.fromJson(Map<String, dynamic> json) {
-    return Kullanici(
+  factory GunlukNot.fromJson(Map<String, dynamic> json) {
+    return GunlukNot(
       id: json['id'],
-      adSoyad: json['ad_soyad'],
-      email: json['eposta'], 
-      unvan: json['unvan'],
+      userId: json['user_id'] is int ? json['user_id'] : int.tryParse(json['user_id'].toString()) ?? 0,
+      tarih: DateTime.tryParse(json['tarih'] ?? "")?.toLocal() ?? DateTime.now(), // Burada da saat düzeltmesi
+      notIcerik: json['not_icerik'] ?? "",
+      duyguDurumu: json['duygu_durumu'] ?? 0,
     );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'user_id': userId,
+      'tarih': tarih.toIso8601String().substring(0, 10), 
+      'not_icerik': notIcerik,
+      'duygu_durumu': duyguDurumu,
+    };
   }
 }

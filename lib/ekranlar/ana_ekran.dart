@@ -1,4 +1,7 @@
+
+
 import 'package:flutter/material.dart';
+import 'package:google_nav_bar/google_nav_bar.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../servisler/api_servisi.dart';
@@ -50,9 +53,17 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   Future<void> _loadEvents() async {
     setState(() => _isLoading = true);
     final events = await _api.getEvents(widget.userId);
+    if (mounted) {
+      setState(() {
+        _allEvents = events;
+        _isLoading = false;
+      });
+    }
+  }
+
+  void _addNewEvent(Etkinlik etkinlik) {
     setState(() {
-      _allEvents = events;
-      _isLoading = false;
+      _allEvents.add(etkinlik);
     });
   }
 
@@ -66,7 +77,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         ),
       ),
     ).then((value) {
-      if (value == true) _loadEvents(); 
+      if (value == true || value is Etkinlik) {
+        _loadEvents(); 
+      }
     });
   }
 
@@ -110,9 +123,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       backgroundColor: Colors.transparent,
       transitionAnimationController: _sheetController,
       builder: (context) {
-        final isDark = Theme.of(context).brightness == Brightness.dark;
-        final sheetColor = isDark ? const Color(0xFF1E1E1E) : Colors.white;
-
         return Container(
           height: MediaQuery.of(context).size.height * 0.65, 
           decoration: BoxDecoration(
@@ -142,7 +152,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
-  // YENİ: Filtre değiştirme mantığını ayrı fonksiyona aldık (Hem butondan hem başlıktan çağrılacak)
   void _cycleFilterMode() {
     setState(() {
       if (_planFilterType == "Bugün") {
@@ -171,25 +180,28 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     switch (_selectedIndex) {
       case 0:
         return PagePlanlama(
+          userId: widget.userId, 
           events: _allEvents,
           filterType: _planFilterType, 
           onToggleStatus: _toggleStatus, 
           onDelete: _confirmDelete,
           onEdit: (e) => _openEventForm(etkinlik: e),
-          // YENİ: Başlığa basılınca bu fonksiyon çalışacak
+          onAdd: _addNewEvent, 
           onHeaderTap: _cycleFilterMode, 
         );
       case 1:
-        return PageAkis(events: _allEvents);
+        return PageAkis(events: _allEvents); 
       case 2:
         return PageIstatistik(events: _allEvents, userName: widget.userName);
       default:
         return PagePlanlama(
+          userId: widget.userId, 
           events: _allEvents,
           filterType: _planFilterType,
           onToggleStatus: _toggleStatus,
           onDelete: _confirmDelete,
           onEdit: (e) => _openEventForm(etkinlik: e),
+          onAdd: _addNewEvent, 
           onHeaderTap: _cycleFilterMode,
         );
     }
@@ -202,7 +214,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     }
 
     if (index == 0 && _selectedIndex == 0) {
-      // Eğer zaten Planlama ekranındaysa butona basınca filtre değişsin
       _cycleFilterMode();
     } else {
       setState(() {
@@ -236,58 +247,51 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked, 
 
-      bottomNavigationBar: BottomAppBar(
-        shape: const CircularNotchedRectangle(), 
-        notchMargin: 8.0, 
-        color: barColor, 
-        elevation: 10, 
-        shadowColor: Colors.black26,
-        child: SizedBox(
-          height: 60,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: <Widget>[
-              _buildNavItem(icon: Icons.calendar_today_outlined, label: _planFilterType, index: 0),
-              _buildNavItem(icon: Icons.timeline, label: "Akış", index: 1),
-              
-              const SizedBox(width: 40), 
-              
-              _buildNavItem(icon: Icons.pie_chart_outline, label: "Analiz", index: 2),
-              _buildNavItem(icon: Icons.person_outline, label: "Profil", index: 3),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildNavItem({required IconData icon, required String label, required int index}) {
-    final isSelected = _selectedIndex == index;
-    final color = (index == 3) ? Colors.grey[400] : (isSelected ? const Color(0xFF0055FF) : Colors.grey[400]);
-    final fontWeight = (index == 3) ? FontWeight.normal : (isSelected ? FontWeight.bold : FontWeight.normal);
-
-    return InkWell(
-      onTap: () => _onItemTapped(index),
-      borderRadius: BorderRadius.circular(30),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              icon, 
-              color: color,
-              size: 26,
-            ),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 10,
-                color: color,
-                fontWeight: fontWeight,
-              ),
+      bottomNavigationBar: Container(
+        decoration: BoxDecoration(
+          color: barColor,
+          boxShadow: [
+            BoxShadow(
+              blurRadius: 20,
+              color: Colors.black.withOpacity(.1),
             )
           ],
+        ),
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 15.0, vertical: 8),
+            child: GNav(
+              rippleColor: Colors.grey[300]!,
+              hoverColor: Colors.grey[100]!,
+              gap: 8,
+              activeColor: const Color(0xFF0055FF),
+              iconSize: 24,
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              duration: const Duration(milliseconds: 400),
+              tabBackgroundColor: const Color(0xFF0055FF).withOpacity(0.1),
+              color: Colors.grey[500],
+              tabs: [
+                GButton(
+                  icon: Icons.calendar_today_outlined,
+                  text: _planFilterType, // DÜZELTME: Dinamik metin
+                ),
+                const GButton(
+                  icon: Icons.timeline,
+                  text: '',
+                ),
+                const GButton(
+                  icon: Icons.pie_chart_outline,
+                  text: '',
+                ),
+                const GButton(
+                  icon: Icons.person_outline,
+                  text: '',
+                ),
+              ],
+              selectedIndex: _selectedIndex,
+              onTabChange: _onItemTapped,
+            ),
+          ),
         ),
       ),
     );

@@ -37,7 +37,7 @@ class ApiService {
     }
   }
 
-  Future<Map<String, dynamic>?> login(String email, String password) async {
+   Future<Map<String, dynamic>> login(String email, String password) async {
     try {
       final response = await http.post(
         Uri.parse('$baseUrl/auth/login'),
@@ -49,12 +49,19 @@ class ApiService {
       );
 
       if (response.statusCode == 200) {
-        return jsonDecode(response.body); 
+        final data = jsonDecode(response.body);
+        return {
+          'success': true,
+          'userId': data['user']['id'],
+          'userName': data['user']['ad_soyad'],
+          'role': data['user']['rol'] ?? 'user', // Backend'den 'rol' gelmeli, yoksa 'user' varsay
+        };
+      } else {
+        return {'success': false, 'message': 'Giriş başarısız.'};
       }
-      return null;
     } catch (e) {
       print("Login Hatası: $e");
-      return null;
+      return {'success': false, 'message': 'Bağlantı hatası: $e'};
     }
   }
 
@@ -195,6 +202,43 @@ class ApiService {
       final response = await http.delete(Uri.parse('$baseUrl/events/$eventId'));
       return response.statusCode == 200;
     } catch (e) {
+      return false;
+    }
+  }
+
+   // --- YENİ: GÜNLÜK NOT ve DUYGU İŞLEMLERİ ---
+
+  // Belirli bir günün notunu getir
+  Future<GunlukNot?> getDailyNote(int userId, DateTime date) async {
+    try {
+      // Tarihi YYYY-MM-DD formatına çevir
+      String formattedDate = date.toIso8601String().substring(0, 10);
+      final response = await http.get(Uri.parse('$baseUrl/daily-notes/$userId/$formattedDate'));
+      
+      if (response.statusCode == 200) {
+        final body = jsonDecode(response.body);
+        if (body != null) {
+          return GunlukNot.fromJson(body);
+        }
+      }
+      return null;
+    } catch (e) {
+      print("API Hatası (getDailyNote): $e");
+      return null;
+    }
+  }
+
+  // Günlük notu veya duyguyu kaydet (Varsa günceller, yoksa ekler - Upsert)
+  Future<bool> saveDailyNote(GunlukNot note) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/daily-notes'),
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode(note.toJson()),
+      );
+      return response.statusCode == 200 || response.statusCode == 201;
+    } catch (e) {
+      print("API Hatası (saveDailyNote): $e");
       return false;
     }
   }

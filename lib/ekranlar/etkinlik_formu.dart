@@ -1,14 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:permission_handler/permission_handler.dart'; 
+import 'package:permission_handler/permission_handler.dart';
 import '../servisler/api_servisi.dart';
 import '../modeller/ajanda_modelleri.dart';
 
 class EtkinlikFormu extends StatefulWidget {
   final int userId;
   final Etkinlik? duzenlenecekEtkinlik;
+  final DateTime? initialDate; 
 
-  const EtkinlikFormu({super.key, required this.userId, this.duzenlenecekEtkinlik});
+  const EtkinlikFormu({
+    super.key, 
+    required this.userId, 
+    this.duzenlenecekEtkinlik,
+    this.initialDate
+  });
 
   @override
   State<EtkinlikFormu> createState() => _EtkinlikFormuState();
@@ -17,7 +23,7 @@ class EtkinlikFormu extends StatefulWidget {
 class _EtkinlikFormuState extends State<EtkinlikFormu> {
   final _titleController = TextEditingController();
   final _descController = TextEditingController();
-  final _api = ApiService();
+  final _api = ApiService(); 
 
   DateTime _selectedDate = DateTime.now();
   TimeOfDay _selectedTime = TimeOfDay.now();
@@ -55,9 +61,12 @@ class _EtkinlikFormuState extends State<EtkinlikFormu> {
     if (widget.duzenlenecekEtkinlik != null) {
       _isEditing = true;
       _titleController.text = widget.duzenlenecekEtkinlik!.baslik;
-      _descController.text = widget.duzenlenecekEtkinlik!.aciklama ?? '';
-      _selectedDate = widget.duzenlenecekEtkinlik!.baslangicTarihi;
-      _selectedTime = TimeOfDay.fromDateTime(widget.duzenlenecekEtkinlik!.baslangicTarihi);
+      _descController.text = widget.duzenlenecekEtkinlik!.aciklama ?? "";
+      
+      // TimeZone Düzeltmesi: Gelen tarihi yerel saate çevir
+      _selectedDate = widget.duzenlenecekEtkinlik!.baslangicTarihi.toLocal();
+      _selectedTime = TimeOfDay.fromDateTime(_selectedDate);
+      
       _priority = widget.duzenlenecekEtkinlik!.oncelik;
       _isReminderOn = true; 
       _isRecurring = false;
@@ -71,7 +80,14 @@ class _EtkinlikFormuState extends State<EtkinlikFormu> {
         _selectedColorOption = _colors[1];
       }
     } else {
-      int todayIndex = DateTime.now().weekday - 1; 
+      // Yeni Ekleme Modu
+      if (widget.initialDate != null) {
+        // Gelen initialDate'i de yerel saat olarak alalım
+        _selectedDate = widget.initialDate!.toLocal();
+      }
+      
+      // Seçili günü haftanın günlerinde işaretle (Pzt=1 ... Paz=7 -> index 0..6)
+      int todayIndex = _selectedDate.weekday - 1; 
       _selectedWeekDays[todayIndex] = true;
     }
 
@@ -81,17 +97,28 @@ class _EtkinlikFormuState extends State<EtkinlikFormu> {
   }
 
   Future<void> _fetchCategories() async {
-    final cats = await _api.getCategories(widget.userId);
-    setState(() {
-      _categories = cats;
-      _isLoadingCategories = false;
-      if (_isEditing && widget.duzenlenecekEtkinlik?.kategoriId != null) {
-        try {
-          _selectedCategory = _categories.firstWhere((c) => c.id == widget.duzenlenecekEtkinlik!.kategoriId);
-        } catch (e) {
-        }
+    try {
+      // DÜZELTME: toString() kaldırıldı.
+      final cats = await _api.getCategories(widget.userId);
+      if (mounted) {
+        setState(() {
+          _categories = cats;
+          _isLoadingCategories = false;
+          if (_isEditing && widget.duzenlenecekEtkinlik?.kategoriId != null) {
+            try {
+              _selectedCategory = _categories.firstWhere((c) => c.id == widget.duzenlenecekEtkinlik!.kategoriId);
+            } catch (e) {
+              // Kategori bulunamazsa boş geç
+            }
+          }
+        });
       }
-    });
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoadingCategories = false);
+        debugPrint("Kategori hatası: $e");
+      }
+    }
   }
 
   void _showAddCategoryDialog() {
@@ -144,9 +171,14 @@ class _EtkinlikFormuState extends State<EtkinlikFormu> {
                   onPressed: () async {
                     if (nameController.text.isNotEmpty) {
                       String colorCode = "0x${selectedCatColor.value.toRadixString(16).toUpperCase()}";
-                      await _api.addCategory(widget.userId, nameController.text, null, colorCode);
-                      Navigator.pop(ctx);
-                      _fetchCategories(); 
+                      try {
+                        // DÜZELTME: toString() kaldırıldı.
+                        await _api.addCategory(widget.userId, nameController.text, null, colorCode);
+                        Navigator.pop(ctx);
+                        _fetchCategories(); 
+                      } catch (e) {
+                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Hata: $e")));
+                      }
                     }
                   },
                   child: const Text("Ekle"),
@@ -233,47 +265,92 @@ class _EtkinlikFormuState extends State<EtkinlikFormu> {
 
     int? catId = _selectedCategory?.id;
 
-    if (_isRecurring && !_isEditing) {
-      if (!_selectedWeekDays.contains(true)) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Lütfen en az bir gün seçin.')));
-        setState(() => _isSaving = false);
-        return;
-      }
-
-      DateTime loopDate = _startDate;
-      while (loopDate.compareTo(_endDate) <= 0) {
-        int weekDayIndex = loopDate.weekday - 1; 
-        if (_selectedWeekDays[weekDayIndex]) {
-          final fullDate = DateTime(
-            loopDate.year, loopDate.month, loopDate.day,
-            _selectedTime.hour, _selectedTime.minute
-          );
-          await _api.addEvent(widget.userId, _titleController.text, _descController.text, fullDate, _priority, kategoriId: catId);
+    try {
+      if (_isRecurring && !_isEditing) {
+        if (!_selectedWeekDays.contains(true)) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Lütfen en az bir gün seçin.')));
+          setState(() => _isSaving = false);
+          return;
         }
-        loopDate = loopDate.add(const Duration(days: 1));
-      }
-      if (mounted) Navigator.pop(context, true);
 
-    } else {
-      final fullDate = DateTime(
-        _selectedDate.year, _selectedDate.month, _selectedDate.day,
-        _selectedTime.hour, _selectedTime.minute
-      );
+        DateTime loopDate = _startDate;
+        while (loopDate.compareTo(_endDate) <= 0) {
+          int weekDayIndex = loopDate.weekday - 1; 
+          if (_selectedWeekDays[weekDayIndex]) {
+            // TimeZone Düzeltmesi: Yerel saat olarak oluştur
+            final fullDate = DateTime(
+              loopDate.year, loopDate.month, loopDate.day,
+              _selectedTime.hour, _selectedTime.minute
+            );
+            
+            // DÜZELTME: toString() kaldırıldı.
+            await _api.addEvent(
+              widget.userId, // int olarak gönderiliyor
+              _titleController.text, 
+              _descController.text, 
+              fullDate, // Artık yerel saat doğru gidecek
+              _priority, 
+              kategoriId: catId
+            );
+          }
+          loopDate = loopDate.add(const Duration(days: 1));
+        }
+        if (mounted) Navigator.pop(context, true);
 
-      bool success;
-      if (_isEditing) {
-        success = await _api.updateEvent(widget.duzenlenecekEtkinlik!.id, _titleController.text, _descController.text, fullDate, _priority, kategoriId: catId);
       } else {
-        success = await _api.addEvent(widget.userId, _titleController.text, _descController.text, fullDate, _priority, kategoriId: catId);
-      }
+        // TimeZone Düzeltmesi: Yerel saat olarak oluştur
+        final fullDate = DateTime(
+          _selectedDate.year, _selectedDate.month, _selectedDate.day,
+          _selectedTime.hour, _selectedTime.minute
+        );
 
-      if (success && mounted) {
-        Navigator.pop(context, true); 
-      } else if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('İşlem başarısız oldu.')));
+        bool success;
+        if (_isEditing) {
+          success = await _api.updateEvent(
+            widget.duzenlenecekEtkinlik!.id, 
+            _titleController.text, 
+            _descController.text, 
+            fullDate, 
+            _priority, 
+            kategoriId: catId
+          );
+        } else {
+          // DÜZELTME: toString() kaldırıldı.
+          success = await _api.addEvent(
+            widget.userId, // int olarak gönderiliyor
+            _titleController.text, 
+            _descController.text, 
+            fullDate, 
+            _priority, 
+            kategoriId: catId
+          );
+        }
+
+        if (success && mounted) {
+          Navigator.pop(context, true); 
+        } else if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('İşlem başarısız oldu.')));
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Hata: $e")));
       }
     }
-    setState(() => _isSaving = false);
+    
+    if (mounted) setState(() => _isSaving = false);
+  }
+
+  Color _parseColor(String? colorCode) {
+    if (colorCode == null) return Colors.grey;
+    try {
+      if (colorCode.startsWith("0x")) {
+        return Color(int.parse(colorCode));
+      }
+      return Colors.grey;
+    } catch (e) {
+      return Colors.grey;
+    }
   }
 
   @override
@@ -290,9 +367,8 @@ class _EtkinlikFormuState extends State<EtkinlikFormu> {
 
     final String heroTag = widget.duzenlenecekEtkinlik != null 
         ? 'event-${widget.duzenlenecekEtkinlik!.id}' 
-        : 'create-event';
+        : 'create-event-new';
 
-    // DÜZELTME: Hero artık Scaffold'ı sarmıyor. Body içeriğini sarıyor.
     return Scaffold(
       backgroundColor: scaffoldColor,
       appBar: AppBar(
@@ -308,15 +384,16 @@ class _EtkinlikFormuState extends State<EtkinlikFormu> {
         ),
         centerTitle: true,
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text("İptal", style: TextStyle(color: Colors.grey)))
+          TextButton(
+            onPressed: () => Navigator.pop(context), 
+            child: const Text("İptal", style: TextStyle(color: Colors.grey))
+          )
         ],
       ),
-      // HERO BURAYA TAŞINDI
       body: Hero(
         tag: heroTag,
-        // Material widget'ı ekledik ki animasyon sırasında arka plan rengi bozulmasın
         child: Material(
-          type: MaterialType.transparency, // Şeffaf olsun ki Scaffold rengini alsın
+          type: MaterialType.transparency, 
           child: _isSaving 
             ? Center(child: CircularProgressIndicator(color: mainColor))
             : SingleChildScrollView(
@@ -329,9 +406,15 @@ class _EtkinlikFormuState extends State<EtkinlikFormu> {
                       width: double.infinity,
                       height: 120,
                       decoration: BoxDecoration(
-                        gradient: LinearGradient(colors: [mainColor.withOpacity(0.8), mainColor], begin: Alignment.topLeft, end: Alignment.bottomRight),
+                        gradient: LinearGradient(
+                          colors: [mainColor.withOpacity(0.8), mainColor], 
+                          begin: Alignment.topLeft, 
+                          end: Alignment.bottomRight
+                        ),
                         borderRadius: BorderRadius.circular(24),
-                        boxShadow: [BoxShadow(color: mainColor.withOpacity(0.3), blurRadius: 15, offset: const Offset(0, 8))],
+                        boxShadow: [
+                          BoxShadow(color: mainColor.withOpacity(0.3), blurRadius: 15, offset: const Offset(0, 8))
+                        ],
                       ),
                       padding: const EdgeInsets.symmetric(horizontal: 24),
                       child: Row(
@@ -376,7 +459,9 @@ class _EtkinlikFormuState extends State<EtkinlikFormu> {
                         borderRadius: BorderRadius.circular(16),
                         boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10)],
                       ),
-                      child: DropdownButtonHideUnderline(
+                      child: _isLoadingCategories 
+                        ? const Center(child: Padding(padding: EdgeInsets.all(8.0), child: CircularProgressIndicator()))
+                        : DropdownButtonHideUnderline(
                         child: DropdownButton<Kategori?>(
                           value: _selectedCategory,
                           hint: Text("Kategori Seçin", style: TextStyle(color: hintColor)),
@@ -389,7 +474,8 @@ class _EtkinlikFormuState extends State<EtkinlikFormu> {
                                 value: cat,
                                 child: Row(
                                   children: [
-                                    Icon(Icons.circle, color: cat.renk, size: 12),
+                                    // DÜZELTME: Kategori rengini güvenli bir şekilde alıyoruz
+                                    Icon(Icons.circle, color: _parseColor(cat.renkKodu), size: 12),
                                     const SizedBox(width: 10),
                                     Text(cat.baslik, style: TextStyle(color: textColor)),
                                   ],
