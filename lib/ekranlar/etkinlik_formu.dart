@@ -63,7 +63,6 @@ class _EtkinlikFormuState extends State<EtkinlikFormu> {
       _titleController.text = widget.duzenlenecekEtkinlik!.baslik;
       _descController.text = widget.duzenlenecekEtkinlik!.aciklama ?? "";
       
-      // TimeZone Düzeltmesi: Gelen tarihi yerel saate çevir
       _selectedDate = widget.duzenlenecekEtkinlik!.baslangicTarihi.toLocal();
       _selectedTime = TimeOfDay.fromDateTime(_selectedDate);
       
@@ -80,13 +79,9 @@ class _EtkinlikFormuState extends State<EtkinlikFormu> {
         _selectedColorOption = _colors[1];
       }
     } else {
-      // Yeni Ekleme Modu
       if (widget.initialDate != null) {
-        // Gelen initialDate'i de yerel saat olarak alalım
         _selectedDate = widget.initialDate!.toLocal();
       }
-      
-      // Seçili günü haftanın günlerinde işaretle (Pzt=1 ... Paz=7 -> index 0..6)
       int todayIndex = _selectedDate.weekday - 1; 
       _selectedWeekDays[todayIndex] = true;
     }
@@ -98,7 +93,6 @@ class _EtkinlikFormuState extends State<EtkinlikFormu> {
 
   Future<void> _fetchCategories() async {
     try {
-      // DÜZELTME: toString() kaldırıldı.
       final cats = await _api.getCategories(widget.userId);
       if (mounted) {
         setState(() {
@@ -107,9 +101,7 @@ class _EtkinlikFormuState extends State<EtkinlikFormu> {
           if (_isEditing && widget.duzenlenecekEtkinlik?.kategoriId != null) {
             try {
               _selectedCategory = _categories.firstWhere((c) => c.id == widget.duzenlenecekEtkinlik!.kategoriId);
-            } catch (e) {
-              // Kategori bulunamazsa boş geç
-            }
+            } catch (e) {}
           }
         });
       }
@@ -140,10 +132,7 @@ class _EtkinlikFormuState extends State<EtkinlikFormu> {
                   TextField(
                     controller: nameController,
                     style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color),
-                    decoration: const InputDecoration(
-                      labelText: "Kategori Adı", 
-                      hintText: "Örn: Spor, İş..."
-                    ),
+                    decoration: const InputDecoration(labelText: "Kategori Adı", hintText: "Örn: Spor, İş..."),
                   ),
                   const SizedBox(height: 20),
                   const Text("Renk Seç", style: TextStyle(fontWeight: FontWeight.bold)),
@@ -172,7 +161,6 @@ class _EtkinlikFormuState extends State<EtkinlikFormu> {
                     if (nameController.text.isNotEmpty) {
                       String colorCode = "0x${selectedCatColor.value.toRadixString(16).toUpperCase()}";
                       try {
-                        // DÜZELTME: toString() kaldırıldı.
                         await _api.addCategory(widget.userId, nameController.text, null, colorCode);
                         Navigator.pop(ctx);
                         _fetchCategories(); 
@@ -255,6 +243,47 @@ class _EtkinlikFormuState extends State<EtkinlikFormu> {
     }
   }
 
+  // --- YENİ: ÇAKIŞMA KONTROLÜ ---
+  Future<bool> _checkForConflict(DateTime newStart) async {
+    try {
+      final events = await _api.getEvents(widget.userId);
+      // Yeni etkinliğin bitiş saati (Varsayılan 1 saat ekliyoruz)
+      final newEnd = newStart.add(const Duration(hours: 1));
+
+      for (var event in events) {
+        // Düzenleme modundaysak, kendisiyle çakışmasını göz ardı et
+        if (_isEditing && event.id == widget.duzenlenecekEtkinlik!.id) continue;
+
+        // Mevcut etkinliğin tarih aralığı
+        // API'den gelen tarihler UTC olabilir, onları da yerel saate çevirelim güvenli olsun
+        DateTime existingStart = event.baslangicTarihi.toLocal();
+        DateTime existingEnd = event.bitisTarihi.toLocal();
+
+        // Çakışma Mantığı:
+        // (Yeni Başlangıç < Eski Bitiş) VE (Yeni Bitiş > Eski Başlangıç)
+        // Aynı dakikaya denk geliyorsa da çakışma sayabiliriz.
+        // Basit kontrol: Tam olarak aynı saat ve dakikada başlıyorsa uyaralım.
+        
+        bool sameDay = existingStart.year == newStart.year && 
+                       existingStart.month == newStart.month && 
+                       existingStart.day == newStart.day;
+                       
+        if (sameDay) {
+           // Aynı gün içinde saat kontrolü
+           // Eğer yeni etkinlik, mevcut etkinliğin süresi içinde başlıyorsa
+           if (newStart.isAtSameMomentAs(existingStart) || 
+              (newStart.isAfter(existingStart) && newStart.isBefore(existingEnd))) {
+             return true; // Çakışma VAR
+           }
+        }
+      }
+      return false; // Çakışma YOK
+    } catch (e) {
+      print("Çakışma kontrolü hatası: $e");
+      return false; // Hata olursa engelleme
+    }
+  }
+
   void _save() async {
     if (_titleController.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Lütfen bir başlık gir.')));
@@ -264,6 +293,50 @@ class _EtkinlikFormuState extends State<EtkinlikFormu> {
     setState(() => _isSaving = true);
 
     int? catId = _selectedCategory?.id;
+    
+    // --- ÇAKIŞMA KONTROLÜ İÇİN TARİHİ HAZIRLA ---
+    final fullDate = DateTime(
+      _selectedDate.year, _selectedDate.month, _selectedDate.day,
+      _selectedTime.hour, _selectedTime.minute
+    );
+
+    // Sadece TEKİL ekleme/düzenleme yaparken kontrol edelim (Tekrarlı da mantık karışabilir)
+    if (!_isRecurring) {
+        bool hasConflict = await _checkForConflict(fullDate);
+        
+        if (hasConflict) {
+            setState(() => _isSaving = false); // Yükleniyor'u durdur
+
+            // Kullanıcıya sor
+            bool? confirm = await showDialog<bool>(
+                context: context,
+                builder: (ctx) => AlertDialog(
+                    title: const Text("⚠️ Çakışma Var"),
+                    content: Text(
+                        "${DateFormat('d MMMM, HH:mm', 'tr_TR').format(fullDate)} saatinde zaten bir göreviniz var.\nYine de eklemek istiyor musunuz?",
+                        style: const TextStyle(fontSize: 14)
+                    ),
+                    actions: [
+                        TextButton(
+                            onPressed: () => Navigator.pop(ctx, false), // Hayır
+                            child: const Text("İptal", style: TextStyle(color: Colors.grey)),
+                        ),
+                        ElevatedButton(
+                            onPressed: () => Navigator.pop(ctx, true), // Evet
+                            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0055FF), foregroundColor: Colors.white),
+                            child: const Text("Evet, Ekle"),
+                        ),
+                    ],
+                ),
+            );
+
+            // Eğer "İptal" dediyse veya boş kapattıysa fonksiyondan çık
+            if (confirm != true) return;
+            
+            // "Evet" dediyse tekrar yükleniyor'u aç ve devam et
+            setState(() => _isSaving = true);
+        }
+    }
 
     try {
       if (_isRecurring && !_isEditing) {
@@ -277,18 +350,16 @@ class _EtkinlikFormuState extends State<EtkinlikFormu> {
         while (loopDate.compareTo(_endDate) <= 0) {
           int weekDayIndex = loopDate.weekday - 1; 
           if (_selectedWeekDays[weekDayIndex]) {
-            // TimeZone Düzeltmesi: Yerel saat olarak oluştur
-            final fullDate = DateTime(
+            final recurringDate = DateTime(
               loopDate.year, loopDate.month, loopDate.day,
               _selectedTime.hour, _selectedTime.minute
             );
             
-            // DÜZELTME: toString() kaldırıldı.
             await _api.addEvent(
-              widget.userId, // int olarak gönderiliyor
+              widget.userId, 
               _titleController.text, 
               _descController.text, 
-              fullDate, // Artık yerel saat doğru gidecek
+              recurringDate, 
               _priority, 
               kategoriId: catId
             );
@@ -298,12 +369,6 @@ class _EtkinlikFormuState extends State<EtkinlikFormu> {
         if (mounted) Navigator.pop(context, true);
 
       } else {
-        // TimeZone Düzeltmesi: Yerel saat olarak oluştur
-        final fullDate = DateTime(
-          _selectedDate.year, _selectedDate.month, _selectedDate.day,
-          _selectedTime.hour, _selectedTime.minute
-        );
-
         bool success;
         if (_isEditing) {
           success = await _api.updateEvent(
@@ -315,9 +380,8 @@ class _EtkinlikFormuState extends State<EtkinlikFormu> {
             kategoriId: catId
           );
         } else {
-          // DÜZELTME: toString() kaldırıldı.
           success = await _api.addEvent(
-            widget.userId, // int olarak gönderiliyor
+            widget.userId, 
             _titleController.text, 
             _descController.text, 
             fullDate, 
@@ -401,7 +465,6 @@ class _EtkinlikFormuState extends State<EtkinlikFormu> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // 1. ÖNİZLEME KARTI
                     Container(
                       width: double.infinity,
                       height: 120,
@@ -449,7 +512,6 @@ class _EtkinlikFormuState extends State<EtkinlikFormu> {
                     
                     const SizedBox(height: 30),
 
-                    // 2. KATEGORİ SEÇİMİ 
                     Text("Kategori", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: textColor, decoration: TextDecoration.none)),
                     const SizedBox(height: 12),
                     Container(
@@ -474,7 +536,6 @@ class _EtkinlikFormuState extends State<EtkinlikFormu> {
                                 value: cat,
                                 child: Row(
                                   children: [
-                                    // DÜZELTME: Kategori rengini güvenli bir şekilde alıyoruz
                                     Icon(Icons.circle, color: _parseColor(cat.renkKodu), size: 12),
                                     const SizedBox(width: 10),
                                     Text(cat.baslik, style: TextStyle(color: textColor)),
@@ -505,7 +566,6 @@ class _EtkinlikFormuState extends State<EtkinlikFormu> {
 
                     const SizedBox(height: 30),
 
-                    // 3. ÖNCELİK SEÇİCİ
                     Text("Öncelik", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: textColor, decoration: TextDecoration.none)),
                     const SizedBox(height: 12),
                     Row(
@@ -536,7 +596,6 @@ class _EtkinlikFormuState extends State<EtkinlikFormu> {
 
                     const SizedBox(height: 30),
 
-                    // 4. AYARLAR LİSTESİ
                     Container(
                       decoration: BoxDecoration(color: cardColor, borderRadius: BorderRadius.circular(20), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10)]),
                       child: Column(
@@ -608,7 +667,6 @@ class _EtkinlikFormuState extends State<EtkinlikFormu> {
 
                     const SizedBox(height: 30),
 
-                    // 5. DETAYLAR
                     Text("Detaylar", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: textColor, decoration: TextDecoration.none)),
                     const SizedBox(height: 12),
                     Container(
@@ -619,7 +677,6 @@ class _EtkinlikFormuState extends State<EtkinlikFormu> {
 
                     const SizedBox(height: 40),
 
-                    // 6. KAYDET BUTONU
                     SizedBox(
                       width: double.infinity,
                       height: 56,

@@ -22,6 +22,7 @@ void main() async {
   runApp(const MyApp());
 }
 
+
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
@@ -101,20 +102,22 @@ class _CheckAuthScreenState extends State<CheckAuthScreen> {
     super.initState();
     _checkLogin();
   }
-
   Future<void> _checkLogin() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final userId = prefs.getInt('userId');
       final userName = prefs.getString('userName');
+      final userRole = prefs.getString('userRole'); // Rolü de kontrol et
       final bool seenOnboarding = prefs.getBool('seenOnboarding') ?? false;
 
       if (userId != null && mounted) {
         if (seenOnboarding) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (context) => HomeScreen(userId: userId, userName: userName ?? 'Kullanıcı')),
-          );
+           // Admin kontrolü burada da yapılmalı (splash screen yapıyor ama burası yedek)
+           if (userRole == 'admin') {
+             Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => AdminPaneli(adminName: userName ?? 'Admin')));
+           } else {
+             Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => HomeScreen(userId: userId, userName: userName ?? 'Kullanıcı')));
+           }
         } else {
           Navigator.pushReplacement(
             context,
@@ -153,36 +156,60 @@ class _LoginScreenState extends State<LoginScreen> {
   final _api = ApiService();
   bool _isLoading = false;
 
-  void _login() async {
+   void _login() async {
     setState(() => _isLoading = true);
 
-    // API'den dönen yanıt artık bir Map (rol bilgisi içeriyor)
+    // API çağrısı
     final result = await _api.login(_emailController.text, _passwordController.text);
 
     setState(() => _isLoading = false);
 
     if (result['success'] == true) {
-      final userId = result['userId'];
-      final userName = result['userName'];
-      final role = result['role']; // Rolü alıyoruz (admin veya user)
+      // --- DÜZELTME BURADA ---
+      // Postman yanıtına göre: result['user']['unvan'] doğru yoldur.
+      // Ancak ApiService.login fonksiyonu bu 'user' objesini parçalayıp düz bir map mi döndürüyor
+      // yoksa ham yanıtı mı dönüyor ona bakmak lazım. 
+      // ApiService koduna bakarsak: 
+      // return {'success': true, 'userId': data['user']['id'], 'userName': ..., 'role': data['user']['rol'] ?? 'user'}; 
+      // (Daha önceki önerimde böyleydi).
+      // Eğer ApiService'i güncellemediysen ve o ham data['user'] döndürmüyorsa, burada manuel olarak almalıyız.
+      
+      // Güvenli Yöntem: Hem düz hem de iç içe yapıyı kontrol edelim.
+      String unvan = 'user';
+      int userId = 0;
+      String userName = 'Kullanıcı';
 
-      // Verileri kaydet (Otomatik giriş için)
+      if (result.containsKey('user') && result['user'] is Map) {
+        // Postman'daki gibi { user: { unvan: ... } } geldiyse
+        final userObj = result['user'];
+        unvan = userObj['unvan'] ?? userObj['role'] ?? 'user';
+        userId = userObj['id'];
+        userName = userObj['ad_soyad'];
+      } else {
+        // ApiService düzenlemişse { role: ..., userId: ... }
+        unvan = result['role'] ?? result['unvan'] ?? 'user';
+        userId = result['userId'];
+        userName = result['userName'];
+      }
+      
+      // String'e çevir ve küçük harf yap
+      unvan = unvan.toString().toLowerCase().trim();
+
+      // Verileri kaydet
       final prefs = await SharedPreferences.getInstance();
       await prefs.setInt('userId', userId);
       await prefs.setString('userName', userName);
       await prefs.setBool('isLoggedIn', true);
-      await prefs.setString('userRole', role); // Rolü de kaydedelim
+      await prefs.setString('userRole', unvan); 
 
       if (mounted) {
-        // ROL KONTROLÜ VE YÖNLENDİRME
-        if (role == 'admin') {
-          // Eğer adminse Admin Paneline git
+        // YÖNLENDİRME
+        if (unvan == 'admin') {
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(builder: (context) => AdminPaneli(adminName: userName)),
           );
         } else {
-          // Değilse normal Ana Ekrana git
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(builder: (context) => HomeScreen(userId: userId, userName: userName)),
@@ -321,12 +348,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
     setState(() => _isLoading = true);
 
-    // Unvan varsayılan olarak "Kullanıcı" gönderiyoruz. Admin olmak için veritabanından elle düzeltilmeli veya özel bir kod girilmeli.
+    // KULLANICI KAYDI
+    // Varsayılan olarak herkes "user" olarak kaydedilir.
+    // Admin yapmak için veritabanına gidip unvanı "admin" olarak güncellemelisin.
     final success = await _api.register(
       _nameController.text, 
       _emailController.text, 
       _passwordController.text, 
-      "Kullanıcı" 
+      "user" // Varsayılan unvan
     );
 
     setState(() => _isLoading = false);

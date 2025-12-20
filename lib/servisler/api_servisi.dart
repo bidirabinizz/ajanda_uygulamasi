@@ -16,6 +16,66 @@ class ApiService {
     }
   }
 
+
+
+  // --- KULLANICI İSTATİSTİKLERİ (ADMIN İÇİN) ---
+  Future<Map<String, dynamic>> getUserStats(int userId) async {
+    try {
+      final response = await http.get(Uri.parse('$baseUrl/users/$userId/stats'));
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      }
+      return {'total_tasks': 0, 'completed_tasks': 0};
+    } catch (e) {
+      print("API Hatası (getUserStats): $e");
+      return {'total_tasks': 0, 'completed_tasks': 0};
+    }
+  }
+
+  // Tüm kullanıcıları getir
+  Future<List<Map<String, dynamic>>> getAllUsers() async {
+    try {
+      final response = await http.get(Uri.parse('$baseUrl/users'));
+      
+      if (response.statusCode == 200) {
+        List<dynamic> body = jsonDecode(response.body);
+        // List<dynamic> -> List<Map<String, dynamic>> dönüşümü
+        return body.map((item) => item as Map<String, dynamic>).toList();
+      } else {
+        return [];
+      }
+    } catch (e) {
+      print("API Hatası (getAllUsers): $e");
+      return [];
+    }
+  }
+
+  // Kullanıcı rolünü güncelle
+  Future<bool> updateUserRole(int userId, String newRole) async {
+    try {
+      final response = await http.put(
+        Uri.parse('$baseUrl/users/$userId/role'),
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode({'unvan': newRole}),
+      );
+      return response.statusCode == 200;
+    } catch (e) {
+      print("API Hatası (updateUserRole): $e");
+      return false;
+    }
+  }
+
+  // Kullanıcıyı sil
+  Future<bool> deleteUser(int userId) async {
+    try {
+      final response = await http.delete(Uri.parse('$baseUrl/users/$userId'));
+      return response.statusCode == 200;
+    } catch (e) {
+      print("API Hatası (deleteUser): $e");
+      return false;
+    }
+  }
+
   // --- AUTH ---
   
   Future<bool> register(String adSoyad, String email, String password, String unvan) async {
@@ -54,7 +114,7 @@ class ApiService {
           'success': true,
           'userId': data['user']['id'],
           'userName': data['user']['ad_soyad'],
-          'role': data['user']['rol'] ?? 'user', // Backend'den 'rol' gelmeli, yoksa 'user' varsay
+          'role': data['user']['unvan'] ?? data['user']['rol'] ?? 'user', 
         };
       } else {
         return {'success': false, 'message': 'Giriş başarısız.'};
