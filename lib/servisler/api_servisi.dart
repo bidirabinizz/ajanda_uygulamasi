@@ -302,4 +302,204 @@ class ApiService {
       return false;
     }
   }
+
+// --- YENİ DESTEK SİSTEMİ (SOHBET) ---
+
+  // 1. Kullanıcının konuşmalarını getir
+  Future<List<Talep>> getUserTickets(int userId) async {
+    try {
+      final response = await http.get(Uri.parse('$baseUrl/tickets/user/$userId'));
+      if (response.statusCode == 200) {
+        List<dynamic> body = jsonDecode(response.body);
+        return body.map((item) => Talep.fromJson(item)).toList();
+      }
+      return [];
+    } catch (e) {
+      print("Get Tickets Hatası: $e");
+      return [];
+    }
+  }
+
+  // 2. Bir konuşmanın mesajlarını getir (Sohbet Geçmişi)
+  Future<List<TalepMesaji>> getTicketMessages(int ticketId) async {
+    try {
+      final response = await http.get(Uri.parse('$baseUrl/tickets/$ticketId/messages'));
+      if (response.statusCode == 200) {
+        List<dynamic> body = jsonDecode(response.body);
+        return body.map((item) => TalepMesaji.fromJson(item)).toList();
+      }
+      return [];
+    } catch (e) {
+      print("Get Messages Hatası: $e");
+      return [];
+    }
+  }
+
+  // 3. Yeni konuşma başlat
+  Future<bool> createTicket(int userId, String konu, String ilkMesaj) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/tickets'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'user_id': userId,
+          'konu': konu,
+          'mesaj': ilkMesaj,
+        }),
+      );
+      return response.statusCode == 201;
+    } catch (e) {
+      print("Create Ticket Hatası: $e");
+      return false;
+    }
+  }
+
+  // 4. Mesaj Gönder
+  Future<bool> sendMessage(int ticketId, String mesaj, {String gonderenTipi = 'user'}) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/tickets/$ticketId/messages'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'gonderen_tipi': gonderenTipi,
+          'mesaj': mesaj,
+        }),
+      );
+      return response.statusCode == 201;
+    } catch (e) {
+      print("Send Message Hatası: $e");
+      return false;
+    }
+  }
+
+  // 5. (ADMIN) Tüm Talepleri Getir
+  Future<List<Talep>> getAllTickets() async {
+    try {
+      final response = await http.get(Uri.parse('$baseUrl/tickets'));
+      if (response.statusCode == 200) {
+        List<dynamic> body = jsonDecode(response.body);
+        return body.map((item) => Talep.fromJson(item)).toList();
+      }
+      return [];
+    } catch (e) {
+      print("Get All Tickets Hatası: $e");
+      return [];
+    }
+  }
+
+  // --- GRUP YÖNETİMİ ---
+
+  Future<List<Map<String, dynamic>>> getGruplar() async {
+    try {
+      final response = await http.get(Uri.parse('$baseUrl/gruplar'));
+      if (response.statusCode == 200) {
+        return List<Map<String, dynamic>>.from(json.decode(response.body));
+      }
+    } catch (e) {
+      print("Grup hatası: $e");
+    }
+    return [];
+  }
+
+  Future<bool> addGrup(String ad) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/gruplar'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({'ad': ad}),
+    );
+    return response.statusCode == 200;
+  }
+
+  Future<bool> updateGrup(int id, String yeniAd) async {
+    final response = await http.put(
+      Uri.parse('$baseUrl/gruplar/$id'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({'ad': yeniAd}),
+    );
+    return response.statusCode == 200;
+  }
+
+  Future<bool> deleteGrup(int id) async {
+    final response = await http.delete(Uri.parse('$baseUrl/gruplar/$id'));
+    return response.statusCode == 200;
+  }
+
+  // --- GRUP DETAY İŞLEMLERİ ---
+
+  // 1. Gruptaki Üyeleri Getir
+  Future<List<Map<String, dynamic>>> getGrupUyeleri(int grupId) async {
+    try {
+      final response = await http.get(Uri.parse('$baseUrl/gruplar/$grupId/uyeler'));
+      if (response.statusCode == 200) {
+        return List<Map<String, dynamic>>.from(json.decode(response.body));
+      }
+    } catch (e) {
+      print("Üye getirme hatası: $e");
+    }
+    return [];
+  }
+
+  // 2. Gruba Üye Ekle
+  Future<bool> addUyeToGrup(int userId, int grupId) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/gruplar/uye-ekle'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({'user_id': userId, 'grup_id': grupId}),
+    );
+    return response.statusCode == 200;
+  }
+
+  // 3. Gruptan Üye Çıkar
+  Future<bool> removeUyeFromGrup(int userId) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/gruplar/uye-cikar'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({'user_id': userId}),
+    );
+    return response.statusCode == 200;
+  }
+
+  // 4. Gruba Sadece Duyuru Yap
+  Future<bool> sendGrupDuyuru(int grupId, String baslik, String mesaj) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/gruplar/duyuru-yap'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({'grup_id': grupId, 'baslik': baslik, 'mesaj': mesaj}),
+    );
+    return response.statusCode == 200;
+  }
+
+  // --- GRUBA TOPLU GÖREV ATA ---
+  Future<bool> assignTaskToGroup(int grupId, String baslik, String aciklama, DateTime tarih) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/gorevler/grup-ata'), // Backend'deki route ile aynı olmalı
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'grup_id': grupId,
+          'baslik': baslik,
+          'aciklama': aciklama,
+          'son_tarih': tarih.toIso8601String(),
+        }),
+      );
+      return response.statusCode == 200;
+    } catch (e) {
+      print("Grup görev hatası: $e");
+      return false;
+    }
+  }
+
+  // --- DUYGU ANALİZİ ---
+  Future<List<Map<String, dynamic>>> getMoodAnalysis(int userId) async {
+    try {
+      final response = await http.get(Uri.parse('$baseUrl/analiz/duygu-durumu/$userId'));
+      if (response.statusCode == 200) {
+        return List<Map<String, dynamic>>.from(json.decode(response.body));
+      }
+    } catch (e) {
+      print("Duygu analizi hatası: $e");
+    }
+    return [];
+  }
+
 }

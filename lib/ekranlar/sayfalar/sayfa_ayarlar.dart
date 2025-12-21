@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart'; // User ID almak için
+import 'package:permission_handler/permission_handler.dart'; // YENİ: İzin kontrolü için
 import '../../servisler/tema_yoneticisi.dart'; 
 import 'sayfa_kategori_yonetimi.dart'; // Kategori yönetimi sayfası
+import '../../servisler/bildirim_servisi.dart'; // YENİ: Bildirim servisi
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -10,18 +12,133 @@ class SettingsScreen extends StatefulWidget {
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-class _SettingsScreenState extends State<SettingsScreen> {
+// WidgetsBindingObserver ekledik: Kullanıcı ayarlara gidip geri gelirse durumu kontrol etmek için
+class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObserver {
   bool _notificationsEnabled = true;
   bool _soundEnabled = true;
-  
-  // Switch animasyonu takılmasın diye yerel değişken
   bool _isDarkLocal = false; 
 
   @override
   void initState() {
     super.initState();
-    // Mevcut tema durumunu al
+    WidgetsBinding.instance.addObserver(this); // Uygulama durumunu dinle
     _isDarkLocal = TemaYoneticisi().isDarkMode;
+    _ayarlariYukle(); // Kayıtlı ayarları ve gerçek izin durumunu çek
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this); // Dinlemeyi bırak
+    super.dispose();
+  }
+
+  // Kullanıcı uygulamayı alta atıp (ayarlara gidip) geri döndüğünde çalışır
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _gercekIzinDurumunuKontrolEt();
+    }
+  }
+
+  // --- AYARLARI YÜKLE ---
+  Future<void> _ayarlariYukle() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _notificationsEnabled = prefs.getBool('notifications_enabled') ?? true;
+      _soundEnabled = prefs.getBool('sound_enabled') ?? true;
+    });
+    // Veritabanında açık olsa bile, telefondan izin kapalıysa kapalı göster
+    await _gercekIzinDurumunuKontrolEt();
+  }
+
+  // --- TELEFONUN GERÇEK İZİN DURUMUNA BAK ---
+  Future<void> _gercekIzinDurumunuKontrolEt() async {
+    final status = await Permission.notification.status;
+    if (status.isDenied || status.isPermanentlyDenied) {
+      if (mounted) {
+        setState(() => _notificationsEnabled = false);
+      }
+    } else if (status.isGranted) {
+       // İzin verildiyse ve bizde de açıksa senkronize kalsın
+       final prefs = await SharedPreferences.getInstance();
+       bool userPref = prefs.getBool('notifications_enabled') ?? true;
+       if (userPref && mounted) {
+          setState(() => _notificationsEnabled = true);
+       }
+    }
+  }
+
+  // --- BİLDİRİM SWITCH MANTIĞI (Entegre Edilen Kısım) ---
+  Future<void> _toggleNotifications(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    final userId = prefs.getInt('userId');
+
+    if (value) {
+      // --- AÇMAYA ÇALIŞIYOR ---
+      var status = await Permission.notification.status;
+
+      if (status.isDenied) {
+        // Hiç sorulmamışsa izin iste
+        status = await Permission.notification.request();
+      }
+
+      if (status.isGranted) {
+        // İzin Verildi -> Aç ve Servisi Başlat
+        setState(() => _notificationsEnabled = true);
+        await prefs.setBool('notifications_enabled', true);
+        
+        if (userId != null) {
+          BildirimServisi().baslat(userId);
+        }
+        
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Bildirimler açıldı ✅")));
+      
+      } else if (status.isPermanentlyDenied) {
+        // Kullanıcı "Bir daha sorma" demiş -> Ayarlara gönder
+        _izinDialogGoster();
+        // Switch'i geri kapat (Çünkü henüz açamadı)
+        setState(() => _notificationsEnabled = false);
+      } else {
+        // İzin vermedi
+        setState(() => _notificationsEnabled = false);
+      }
+    } else {
+      // --- KAPATMAYA ÇALIŞIYOR ---
+      setState(() => _notificationsEnabled = false);
+      await prefs.setBool('notifications_enabled', false);
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Bildirimler kapatıldı 🔕")));
+    }
+  }
+
+  // --- İZİN DİYALOG PENCERESİ ---
+  void _izinDialogGoster() {
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        final isDark = Theme.of(context).brightness == Brightness.dark;
+        final cardColor = isDark ? const Color(0xFF1E1E1E) : Colors.white;
+        final textColor = isDark ? Colors.white : Colors.black87;
+
+        return AlertDialog(
+          backgroundColor: cardColor,
+          title: Text("İzin Gerekli", style: TextStyle(color: textColor)),
+          content: Text("Bildirim gönderebilmemiz için ayarlardan izin vermeniz gerekiyor.", style: TextStyle(color: textColor)),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text("İptal", style: TextStyle(color: Colors.grey)),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                openAppSettings(); // BENİ AYARLARA GÖTÜR
+              },
+              child: const Text("Ayarlara Git"),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   // Kategoriler sayfasına gitmek için yardımcı fonksiyon
@@ -92,12 +209,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       setState(() {
                         _isDarkLocal = val;
                       });
-                      // Animasyonun bitmesini bekle, sonra temayı değiştir (Donmayı önler)
                       await Future.delayed(const Duration(milliseconds: 300));
                       temaYoneticisi.temayiDegistir(val); 
                     },
                   ),
                   Divider(height: 1, indent: 60, endIndent: 20, color: dividerColor),
+                  
+                  // --- GÜNCELLENEN BİLDİRİM SWITCH'İ ---
                   _buildSwitchTile(
                     title: "Bildirimler",
                     icon: Icons.notifications_outlined,
@@ -105,8 +223,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     iconBgColor: iconBgColor,
                     textColor: textColor,
                     value: _notificationsEnabled,
-                    onChanged: (val) => setState(() => _notificationsEnabled = val),
+                    onChanged: _toggleNotifications, // Yeni mantığı buraya bağladık
                   ),
+                  
                   Divider(height: 1, indent: 60, endIndent: 20, color: dividerColor),
                   _buildSwitchTile(
                     title: "Uygulama Sesleri",
@@ -115,7 +234,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     iconBgColor: iconBgColor,
                     textColor: textColor,
                     value: _soundEnabled,
-                    onChanged: (val) => setState(() => _soundEnabled = val),
+                    onChanged: (val) async {
+                       setState(() => _soundEnabled = val);
+                       final prefs = await SharedPreferences.getInstance();
+                       await prefs.setBool('sound_enabled', val);
+                    },
                   ),
                 ],
               ),
@@ -123,7 +246,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
             const SizedBox(height: 24),
 
-            // --- BÖLÜM 2: İÇERİK YÖNETİMİ (YENİ) ---
+            // --- BÖLÜM 2: İÇERİK YÖNETİMİ ---
             Padding(
               padding: const EdgeInsets.only(left: 8, bottom: 10),
               child: Text("İÇERİK YÖNETİMİ", style: TextStyle(color: sectionTitleColor, fontWeight: FontWeight.bold, fontSize: 12)),
@@ -142,7 +265,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     iconColor: Colors.deepOrange, 
                     iconBgColor: iconBgColor,
                     textColor: textColor,
-                    onTap: _navigateToCategories, // Fonksiyonu çağırıyoruz
+                    onTap: _navigateToCategories,
                   ),
                 ],
               ),
@@ -217,6 +340,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         TextButton(
                           onPressed: () {
                             Navigator.pop(ctx);
+                            // Hesabı silme işlemleri buraya
                           },
                           child: const Text("Sil", style: TextStyle(color: Colors.red)),
                         ),

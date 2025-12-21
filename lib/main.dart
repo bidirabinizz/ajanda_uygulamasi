@@ -5,7 +5,7 @@ import 'servisler/api_servisi.dart';
 import 'ekranlar/ana_ekran.dart'; 
 import 'ekranlar/splash_screen.dart';
 import 'ekranlar/tanitim_ekrani.dart';
-import 'ekranlar/admin_paneli.dart'; // Admin paneli import edildi
+import 'ekranlar/admin_paneli.dart'; 
 import 'servisler/tema_yoneticisi.dart'; 
 
 void main() async {
@@ -22,7 +22,6 @@ void main() async {
   runApp(const MyApp());
 }
 
-
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
@@ -35,7 +34,6 @@ class MyApp extends StatelessWidget {
           debugShowCheckedModeBanner: false,
           title: 'Özel Ajandam',
           
-          // --- AÇIK TEMA (Light Mode) ---
           theme: ThemeData(
             colorScheme: ColorScheme.fromSeed(
               seedColor: const Color(0xFF0055FF),
@@ -56,7 +54,6 @@ class MyApp extends StatelessWidget {
             ),
           ),
 
-          // --- KOYU TEMA (Dark Mode) ---
           darkTheme: ThemeData(
             colorScheme: ColorScheme.fromSeed(
               seedColor: const Color(0xFF0055FF),
@@ -76,13 +73,11 @@ class MyApp extends StatelessWidget {
               fillColor: const Color(0xFF1E1E1E), 
               hintStyle: TextStyle(color: Colors.grey[600]),
             ),
-            // DÜZELTME: cardTheme satırını kaldırdık, Material 3 otomatik halledecek.
             bottomSheetTheme: const BottomSheetThemeData(backgroundColor: Color(0xFF1E1E1E)),
             dialogBackgroundColor: const Color(0xFF1E1E1E),
           ),
 
           themeMode: TemaYoneticisi().themeMode, 
-          
           home: const SplashScreen(),
         );
       },
@@ -107,21 +102,29 @@ class _CheckAuthScreenState extends State<CheckAuthScreen> {
       final prefs = await SharedPreferences.getInstance();
       final userId = prefs.getInt('userId');
       final userName = prefs.getString('userName');
-      final userRole = prefs.getString('userRole'); // Rolü de kontrol et
+      final userRole = prefs.getString('userRole'); 
       final bool seenOnboarding = prefs.getBool('seenOnboarding') ?? false;
 
       if (userId != null && mounted) {
         if (seenOnboarding) {
-           // Admin kontrolü burada da yapılmalı (splash screen yapıyor ama burası yedek)
            if (userRole == 'admin') {
              Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => AdminPaneli(adminName: userName ?? 'Admin')));
            } else {
-             Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => HomeScreen(userId: userId, userName: userName ?? 'Kullanıcı')));
+             Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => HomeScreen(
+               userId: userId, 
+               userName: userName ?? 'Kullanıcı',
+               userRole: userRole ?? 'user',
+             )));
            }
         } else {
+          // --- DÜZELTİLEN KISIM ---
           Navigator.pushReplacement(
             context,
-            MaterialPageRoute(builder: (context) => OnboardingScreen(userId: userId, userName: userName ?? 'Kullanıcı')),
+            MaterialPageRoute(builder: (context) => OnboardingScreen(
+              userId: userId, 
+              userName: userName ?? 'Kullanıcı',
+              userRole: userRole ?? 'user', // EKLENDİ
+            )),
           );
         }
       } else {
@@ -156,46 +159,31 @@ class _LoginScreenState extends State<LoginScreen> {
   final _api = ApiService();
   bool _isLoading = false;
 
-   void _login() async {
+  void _login() async {
     setState(() => _isLoading = true);
 
-    // API çağrısı
     final result = await _api.login(_emailController.text, _passwordController.text);
 
     setState(() => _isLoading = false);
 
     if (result['success'] == true) {
-      // --- DÜZELTME BURADA ---
-      // Postman yanıtına göre: result['user']['unvan'] doğru yoldur.
-      // Ancak ApiService.login fonksiyonu bu 'user' objesini parçalayıp düz bir map mi döndürüyor
-      // yoksa ham yanıtı mı dönüyor ona bakmak lazım. 
-      // ApiService koduna bakarsak: 
-      // return {'success': true, 'userId': data['user']['id'], 'userName': ..., 'role': data['user']['rol'] ?? 'user'}; 
-      // (Daha önceki önerimde böyleydi).
-      // Eğer ApiService'i güncellemediysen ve o ham data['user'] döndürmüyorsa, burada manuel olarak almalıyız.
-      
-      // Güvenli Yöntem: Hem düz hem de iç içe yapıyı kontrol edelim.
       String unvan = 'user';
       int userId = 0;
       String userName = 'Kullanıcı';
 
       if (result.containsKey('user') && result['user'] is Map) {
-        // Postman'daki gibi { user: { unvan: ... } } geldiyse
         final userObj = result['user'];
         unvan = userObj['unvan'] ?? userObj['role'] ?? 'user';
         userId = userObj['id'];
         userName = userObj['ad_soyad'];
       } else {
-        // ApiService düzenlemişse { role: ..., userId: ... }
         unvan = result['role'] ?? result['unvan'] ?? 'user';
         userId = result['userId'];
         userName = result['userName'];
       }
       
-      // String'e çevir ve küçük harf yap
       unvan = unvan.toString().toLowerCase().trim();
 
-      // Verileri kaydet
       final prefs = await SharedPreferences.getInstance();
       await prefs.setInt('userId', userId);
       await prefs.setString('userName', userName);
@@ -203,7 +191,6 @@ class _LoginScreenState extends State<LoginScreen> {
       await prefs.setString('userRole', unvan); 
 
       if (mounted) {
-        // YÖNLENDİRME
         if (unvan == 'admin') {
           Navigator.pushReplacement(
             context,
@@ -212,7 +199,11 @@ class _LoginScreenState extends State<LoginScreen> {
         } else {
           Navigator.pushReplacement(
             context,
-            MaterialPageRoute(builder: (context) => HomeScreen(userId: userId, userName: userName)),
+            MaterialPageRoute(builder: (context) => HomeScreen(
+              userId: userId, 
+              userName: userName,
+              userRole: unvan,
+            )),
           );
         }
       }
@@ -245,7 +236,6 @@ class _LoginScreenState extends State<LoginScreen> {
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Logo veya İkon
               Icon(Icons.calendar_month_rounded, size: 80, color: const Color(0xFF0055FF)),
               const SizedBox(height: 16),
               Text(
@@ -261,7 +251,6 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               const SizedBox(height: 40),
 
-              // E-posta
               TextField(
                 controller: _emailController,
                 decoration: InputDecoration(
@@ -274,7 +263,6 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               const SizedBox(height: 16),
 
-              // Şifre
               TextField(
                 controller: _passwordController,
                 obscureText: true,
@@ -288,7 +276,6 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               const SizedBox(height: 24),
 
-              // Giriş Butonu
               SizedBox(
                 height: 56,
                 child: ElevatedButton(
@@ -307,7 +294,6 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               const SizedBox(height: 24),
 
-              // Kayıt Ol Linki
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -348,14 +334,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
     setState(() => _isLoading = true);
 
-    // KULLANICI KAYDI
-    // Varsayılan olarak herkes "user" olarak kaydedilir.
-    // Admin yapmak için veritabanına gidip unvanı "admin" olarak güncellemelisin.
     final success = await _api.register(
       _nameController.text, 
       _emailController.text, 
       _passwordController.text, 
-      "user" // Varsayılan unvan
+      "user" 
     );
 
     setState(() => _isLoading = false);
@@ -363,7 +346,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     if (success) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Kayıt başarılı! Giriş yapabilirsiniz.')));
-        Navigator.pop(context); // Giriş ekranına dön
+        Navigator.pop(context); 
       }
     } else {
       if (mounted) {

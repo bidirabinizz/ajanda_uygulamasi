@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+// --- KATEGORİ MODELİ ---
 class Kategori {
   final int id;
   final String baslik;
@@ -22,7 +23,6 @@ class Kategori {
     );
   }
 
-  // Eksik olan renk getter'ı eklendi
   Color get renk {
     try {
       if (renkKodu.startsWith("0x")) {
@@ -35,6 +35,7 @@ class Kategori {
   }
 }
 
+// --- ETKİNLİK MODELİ ---
 class Etkinlik {
   final int id;
   final String baslik;
@@ -63,15 +64,13 @@ class Etkinlik {
   factory Etkinlik.fromJson(Map<String, dynamic> json) {
     return Etkinlik(
       id: json['id'] ?? 0,
-      baslik: json['baslik'] ?? "", // Boş gelirse hata verme, boş string yap
+      baslik: json['baslik'] ?? "",
       aciklama: json['aciklama'],
-      // --- SAAT FARKI ÇÖZÜMÜ BURADA ---
-      // .toLocal() ekleyerek sunucudan gelen saati Türkiye saatine çeviriyoruz
       baslangicTarihi: DateTime.tryParse(json['baslangic_tarihi'] ?? "")?.toLocal() ?? DateTime.now(),
       bitisTarihi: DateTime.tryParse(json['bitis_tarihi'] ?? "")?.toLocal() ?? DateTime.now(),
       kategori: json['kategori_adi'] ?? 'Genel',
       kategoriId: json['kategori_id'],
-      oncelik: json['oncelik_duzeyi'] ?? json['oncelik'] ?? "Orta", // Backend alan adı kontrolü
+      oncelik: json['oncelik_duzeyi'] ?? json['oncelik'] ?? "Orta",
       tamamlandiMi: json['tamamlandi_mi'] == 1 || json['tamamlandi_mi'] == true,
       userId: json['user_id']?.toString() ?? "",
     );
@@ -91,6 +90,7 @@ class Etkinlik {
   }
 }
 
+// --- GÜNLÜK NOT MODELİ ---
 class GunlukNot {
   final int? id;
   final int userId;
@@ -110,7 +110,7 @@ class GunlukNot {
     return GunlukNot(
       id: json['id'],
       userId: json['user_id'] is int ? json['user_id'] : int.tryParse(json['user_id'].toString()) ?? 0,
-      tarih: DateTime.tryParse(json['tarih'] ?? "")?.toLocal() ?? DateTime.now(), // Burada da saat düzeltmesi
+      tarih: DateTime.tryParse(json['tarih'] ?? "")?.toLocal() ?? DateTime.now(),
       notIcerik: json['not_icerik'] ?? "",
       duyguDurumu: json['duygu_durumu'] ?? 0,
     );
@@ -123,5 +123,62 @@ class GunlukNot {
       'not_icerik': notIcerik,
       'duygu_durumu': duyguDurumu,
     };
+  }
+}
+
+// --- DESTEK TALEBİ (KONUŞMA BAŞLIĞI) ---
+class Talep {
+  final int id;
+  final int userId;
+  final String konu;
+  final String durum; // 'Bekliyor', 'Cevaplandı'
+  final DateTime guncellenmeTarihi;
+  final String? kullaniciAdi; // EKLENDİ: Adminin kiminle konuştuğunu bilmesi için
+
+  Talep({
+    required this.id,
+    required this.userId,
+    required this.konu,
+    required this.durum,
+    required this.guncellenmeTarihi,
+    this.kullaniciAdi, // Opsiyonel, admin ekranında dolu gelir
+  });
+
+  factory Talep.fromJson(Map<String, dynamic> json) {
+    return Talep(
+      id: json['id'],
+      userId: json['user_id'],
+      konu: json['konu'],
+      durum: json['durum'] ?? 'Bekliyor',
+      guncellenmeTarihi: DateTime.tryParse(json['updated_at'] ?? "")?.toLocal() ?? DateTime.now(),
+      kullaniciAdi: json['ad_soyad'], // API'den gelen ad_soyad buraya eşleniyor
+    );
+  }
+}
+
+// --- SOHBET MESAJI ---
+class TalepMesaji {
+  final int id;
+  final int talepId;
+  final String gonderenTipi; // 'user' veya 'admin'
+  final String mesaj;
+  final DateTime tarih;
+
+  TalepMesaji({
+    required this.id,
+    required this.talepId,
+    required this.gonderenTipi,
+    required this.mesaj,
+    required this.tarih,
+  });
+
+  factory TalepMesaji.fromJson(Map<String, dynamic> json) {
+    return TalepMesaji(
+      id: json['id'],
+      talepId: json['talep_id'],
+      gonderenTipi: json['gonderen_tipi'] ?? 'user',
+      mesaj: json['mesaj'] ?? "",
+      tarih: DateTime.tryParse(json['created_at'] ?? "")?.toLocal() ?? DateTime.now(),
+    );
   }
 }

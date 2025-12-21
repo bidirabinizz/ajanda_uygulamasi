@@ -1,5 +1,3 @@
-
-
 import 'package:flutter/material.dart';
 import 'package:google_nav_bar/google_nav_bar.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -7,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../servisler/api_servisi.dart';
 import '../modeller/ajanda_modelleri.dart';
 import '../main.dart'; 
+import '../servisler/bildirim_servisi.dart'; // Bildirim servisi eklendi
 import 'etkinlik_formu.dart';
 
 import 'sayfalar/sayfa_planlama.dart';
@@ -17,8 +16,14 @@ import 'sayfalar/sayfa_profil.dart';
 class HomeScreen extends StatefulWidget {
   final int userId;
   final String userName;
+  final String userRole; // <-- EKLENDİ
 
-  const HomeScreen({super.key, required this.userId, required this.userName});
+  const HomeScreen({
+    super.key, 
+    required this.userId, 
+    required this.userName,
+    required this.userRole, // <-- EKLENDİ
+  });
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -42,6 +47,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       vsync: this,
       duration: const Duration(milliseconds: 600), 
     );
+
+    // --- BİLDİRİM SERVİSİNİ BAŞLAT ---
+    // Artık widget.userRole hatası vermeyecek
+    BildirimServisi().init().then((_) {
+      if (widget.userRole != 'admin') {
+         BildirimServisi().baslat(widget.userId);
+      }
+    });
   }
 
   @override
@@ -102,6 +115,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   Future<void> _logout() async {
+    BildirimServisi().durdur(); // Çıkışta durdur
     final prefs = await SharedPreferences.getInstance();
     await prefs.clear();
     if (mounted) {
@@ -143,7 +157,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               ),
               const SizedBox(height: 10),
               Expanded(
-                child: ProfilSayfasi(userName: widget.userName, onLogout: _logout),
+                // ProfilSayfasi'na userId eklendiğini varsayıyorum, önceki adımlarda eklemiştik
+                child: ProfilSayfasi(
+                  userName: widget.userName, 
+                  userId: widget.userId, // Eğer ProfilSayfasi'nda yoksa bunu silin
+                  onLogout: _logout
+                ),
               ),
             ],
           ),
@@ -273,7 +292,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               tabs: [
                 GButton(
                   icon: Icons.calendar_today_outlined,
-                  text: _planFilterType, // DÜZELTME: Dinamik metin
+                  text: _planFilterType, 
                 ),
                 const GButton(
                   icon: Icons.timeline,

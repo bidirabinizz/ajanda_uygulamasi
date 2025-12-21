@@ -1,12 +1,19 @@
 import 'package:flutter/material.dart';
 import 'sayfa_ayarlar.dart'; 
+import '../destek_talepleri_ekrani.dart';
 
-// DİKKAT: Sınıf ismini 'ProfilSayfasi' yaptık (Eskisi: PageProfil)
+// DİKKAT: Sınıf ismini 'ProfilSayfasi' yaptık
 class ProfilSayfasi extends StatelessWidget {
   final String userName;
+  final int userId; // EKLENDİ: Destek talebi için gerekli
   final VoidCallback onLogout;
 
-  const ProfilSayfasi({super.key, required this.userName, required this.onLogout});
+  const ProfilSayfasi({
+    super.key, 
+    required this.userName, 
+    required this.userId, // EKLENDİ
+    required this.onLogout
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -54,6 +61,26 @@ class ProfilSayfasi extends StatelessWidget {
                     );
                   },
                 ),
+                const SizedBox(height: 12),
+
+                // --- DESTEK TALEPLERİ BUTONU ---
+                ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(color: Colors.orange.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+                    child: const Icon(Icons.support_agent, color: Colors.orange),
+                  ),
+                  title: const Text("Destek Taleplerim", style: TextStyle(fontWeight: FontWeight.bold)),
+                  trailing: const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => DestekTalepleriEkrani(userId: userId)),
+                    );
+                  },
+                ),
+                const Divider(),
+
                 const SizedBox(height: 12),
                 ListTile(
                   leading: Container(

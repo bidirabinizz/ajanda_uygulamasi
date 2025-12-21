@@ -6,8 +6,14 @@ import 'ana_ekran.dart'; // Ana ekrana yönlendirmek için
 class OnboardingScreen extends StatefulWidget {
   final int userId;
   final String userName;
+  final String userRole; // <-- 1. EKLENDİ
 
-  const OnboardingScreen({super.key, required this.userId, required this.userName});
+  const OnboardingScreen({
+    super.key, 
+    required this.userId, 
+    required this.userName,
+    required this.userRole, // <-- 2. EKLENDİ
+  });
 
   @override
   State<OnboardingScreen> createState() => _OnboardingScreenState();
@@ -24,7 +30,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
     // Ana ekrana git ve geri gelmeyi engelle
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => HomeScreen(userId: widget.userId, userName: widget.userName)),
+      MaterialPageRoute(builder: (_) => HomeScreen(
+        userId: widget.userId, 
+        userName: widget.userName,
+        userRole: widget.userRole, // <-- 3. BURADA ARTIK GÖNDERİLİYOR
+      )),
     );
   }
 
@@ -49,7 +59,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       bodyPadding: EdgeInsets.fromLTRB(16.0, 0.0, 16.0, 16.0),
       pageColor: Colors.white,
       imagePadding: EdgeInsets.zero,
-      imageFlex: 2, // Resmin kaplayacağı alan oranı
+      imageFlex: 2, 
     );
 
     return IntroductionScreen(
@@ -81,7 +91,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         ),
       ],
       onDone: () => _onIntroEnd(context),
-      onSkip: () => _onIntroEnd(context), // "Geç" butonuna basınca da bitsin
+      onSkip: () => _onIntroEnd(context), 
       showSkipButton: true,
       skipOrBackFlex: 0,
       nextFlex: 0,
@@ -102,7 +112,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         activeShape: RoundedRectangleBorder(
           borderRadius: BorderRadius.all(Radius.circular(25.0)),
         ),
-        activeColor: Color(0xFF0055FF), // Aktif nokta rengi
+        activeColor: Color(0xFF0055FF), 
       ),
     );
   }
